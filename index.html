@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASK — AI Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+    body { height: 100%; background: #080C14; color: #E2E8F0; font-family: 'Syne', sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+
+    @keyframes dotPulse { 0%,80%,100%{transform:scale(.5);opacity:.25} 40%{transform:scale(1);opacity:1} }
+    @keyframes fadeIn   { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes slideIn  { from{transform:translateX(-100%)} to{transform:translateX(0)} }
+    @keyframes modalIn  { from{opacity:0;transform:scale(.96) translateY(8px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes blink    { 0%,100%{opacity:1} 50%{opacity:0} }
+    @keyframes copyFlash { 0%{background:#10B98122} 100%{background:transparent} }
+
+    /* ── APP SHELL ── */
+    #app {
+      display: flex;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: 240px; min-width: 240px;
+      background: #0B0F1A;
+      border-right: 1px solid #151C2B;
+      display: flex; flex-direction: column;
+      padding: 18px 12px 16px;
+      z-index: 300;
+      transition: transform .22s cubic-bezier(.4,0,.2,1);
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 9px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 700; font-size: 15px; letter-spacing: .12em;
+      color: #fff; margin-bottom: 18px; padding: 0 4px; user-select: none;
+    }
+    .logo-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #60A5FA; box-shadow: 0 0 10px #60A5FA99; flex-shrink: 0;
+    }
+    .new-chat-btn {
+      width: 100%; background: #131928; border: 1px solid #1E2A3E;
+      border-radius: 8px; color: #8B95A8; padding: 10px 12px;
+      font-size: 13px; font-family: 'Syne', sans-serif; cursor: pointer;
+      text-align: left; display: flex; align-items: center; gap: 8px;
+      transition: all .15s; margin-bottom: 14px; min-height: 44px;
+    }
+    .new-chat-btn:hover { background: #1A2438; color: #D1D5DB; }
+    .conv-list { flex: 1; overflow-y: auto; scrollbar-width: none; }
+    .conv-list::-webkit-scrollbar { display: none; }
+    .conv-item {
+      padding: 9px 10px; border-radius: 7px; font-size: 12.5px;
+      color: #3D4F6A; cursor: pointer; transition: all .12s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 2px; min-height: 38px; display: flex; align-items: center;
+    }
+    .conv-item.active, .conv-item:hover { background: #131928; color: #8B95A8; }
+    .sidebar-footer { margin-top: 12px; padding-top: 12px; border-top: 1px solid #151C2B; }
+    .settings-btn {
+      width: 100%; background: none; border: 1px solid #1E2A3E;
+      border-radius: 8px; color: #3D4F6A; padding: 9px 12px; font-size: 12.5px;
+      font-family: 'Syne', sans-serif; cursor: pointer;
+      display: flex; align-items: center; gap: 8px; transition: all .15s; min-height: 44px;
+    }
+    .settings-btn:hover { color: #8B95A8; border-color: #2A3850; background: #131928; }
+
+    .sidebar-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.65); z-index: 299;
+    }
+    .sidebar-overlay.open { display: block; }
+
+    /* Sidebar: mobile hidden, desktop always visible */
+    @media (max-width: 1023px) {
+      #sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0;
+        transform: translateX(-100%);
+      }
+      #sidebar.open { transform: translateX(0); animation: slideIn .22s cubic-bezier(.4,0,.2,1); }
+    }
+    @media (min-width: 1024px) {
+      #sidebar { position: relative; transform: none !important; }
+    }
+
+    /* ── MAIN ── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+    /* ── TOPBAR ── */
+    #topbar {
+      height: 52px; min-height: 52px;
+      border-bottom: 1px solid #151C2B;
+      display: flex; align-items: center; padding: 0 12px; gap: 8px;
+      flex-shrink: 0; background: #080C14;
+    }
+    .hamburger {
+      display: none; background: none; border: none; color: #3D4F6A;
+      cursor: pointer; padding: 8px; border-radius: 8px;
+      align-items: center; justify-content: center; transition: all .12s;
+      flex-shrink: 0; min-width: 40px; min-height: 40px;
+    }
+    .hamburger:hover { color: #8B95A8; background: #131928; }
+    @media (max-width: 1023px) { .hamburger { display: flex; } }
+
+    .topbar-logo {
+      font-family: 'IBM Plex Mono', monospace; font-weight: 700;
+      font-size: 13px; letter-spacing: .12em; color: #fff; display: none;
+      user-select: none;
+    }
+    @media (max-width: 1023px) { .topbar-logo { display: block; } }
+
+    /* Model strip — scrollable */
+    .model-strip {
+      display: flex; gap: 4px; margin-left: auto;
+      overflow-x: auto; scrollbar-width: none; flex-shrink: 1;
+      padding: 2px 0;
+    }
+    .model-strip::-webkit-scrollbar { display: none; }
+    .model-badge {
+      background: transparent; border: 1px solid #1E2A3E; border-radius: 6px;
+      padding: 4px 8px; color: #3D4F6A; font-size: 10.5px;
+      font-family: 'IBM Plex Mono', monospace; cursor: pointer;
+      display: flex; align-items: center; gap: 4px; transition: all .15s;
+      white-space: nowrap; flex-shrink: 0; min-height: 32px;
+    }
+    .model-badge .badge-id { font-weight: 700; }
+    .model-badge .badge-desc { opacity: .6; font-size: 9.5px; }
+    .model-badge.active {
+      border-color: var(--badge-color); color: var(--badge-color);
+      background: color-mix(in srgb, var(--badge-color) 10%, transparent);
+    }
+    .model-badge .badge-provider {
+      font-size: 8px; opacity: .5; letter-spacing: .04em;
+      padding: 1px 4px; border-radius: 3px; background: #1E2A3E; color: #8B95A8;
+    }
+    /* Hide desc text on small mobile */
+    @media (max-width: 480px) {
+      .model-badge .badge-desc { display: none; }
+      .model-badge { padding: 4px 7px; }
+    }
+
+    .topbar-settings {
+      background: none; border: 1px solid #1E2A3E; border-radius: 8px;
+      color: #3D4F6A; cursor: pointer; padding: 7px 9px;
+      display: flex; align-items: center; transition: all .15s; flex-shrink: 0;
+      min-width: 36px; min-height: 36px;
+    }
+    .topbar-settings:hover { color: #8B95A8; border-color: #2A3850; background: #131928; }
+
+    /* ── MESSAGES ── */
+    #messages {
+      flex: 1; overflow-y: auto; padding: 24px 16px 8px;
+      scrollbar-width: thin; scrollbar-color: #1E2A3E transparent;
+    }
+    #messages::-webkit-scrollbar { width: 4px; }
+    #messages::-webkit-scrollbar-thumb { background: #1E2A3E; border-radius: 4px; }
+    .messages-inner { max-width: 720px; margin: 0 auto; width: 100%; }
+    @media (max-width: 640px) { #messages { padding: 16px 10px 6px; } }
+
+    /* ── EMPTY STATE ── */
+    #empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 60vh; gap: 10px;
+      animation: fadeIn .4s ease-out; padding: 20px;
+    }
+    .empty-logo {
+      font-family: 'IBM Plex Mono', monospace; font-size: clamp(32px,8vw,48px);
+      font-weight: 700; letter-spacing: .1em;
+      background: linear-gradient(135deg,#60A5FA 0%,#818CF8 50%,#A78BFA 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; line-height: 1;
+    }
+    .empty-sub {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      color: #1E2A3E; letter-spacing: .06em; margin-bottom: 6px;
+    }
+    .starter-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px; max-width: 440px; width: 100%;
+    }
+    @media (max-width: 480px) { .starter-grid { grid-template-columns: 1fr; } }
+    .starter-card {
+      background: #0B0F1A; border: 1px solid #151C2B; border-radius: 10px;
+      padding: 12px 14px; font-size: 13px; color: #3D4F6A; cursor: pointer;
+      text-align: left; font-family: 'Syne', sans-serif;
+      transition: all .15s; line-height: 1.5; min-height: 48px;
+    }
+    .starter-card:hover { border-color: #1E2A3E; color: #8B95A8; background: #0E1422; }
+    .starter-card:active { background: #131928; }
+
+    /* ── MESSAGE ROWS ── */
+    .msg-row { display: flex; margin-bottom: 20px; animation: fadeIn .2s ease-out; }
+    .msg-row.user { justify-content: flex-end; }
+    .ai-avatar {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, #1D4ED8, #7C3AED);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700;
+      color: #fff; flex-shrink: 0; margin-right: 10px; margin-top: 2px;
+    }
+    .msg-bubble {
+      font-size: 14.5px; line-height: 1.72; word-break: break-word;
+      min-width: 0;
+    }
+    .msg-bubble.user {
+      background: linear-gradient(135deg, #132040, #0F1A33);
+      border: 1px solid #1E3A6033; border-radius: 14px;
+      padding: 10px 15px; color: #CBD5E1;
+      max-width: min(75%, 540px);
+    }
+    .msg-bubble.assistant { color: #A0AEC0; flex: 1; }
+    @media (max-width: 640px) {
+      .msg-bubble.user { max-width: 85%; font-size: 14px; }
+      .msg-bubble.assistant { font-size: 14px; }
+      .msg-bubble { font-size: 14px; line-height: 1.65; }
+    }
+    .stream-cursor {
+      display: inline-block; width: 2px; height: 1em;
+      background: #60A5FA; margin-left: 2px; vertical-align: text-bottom;
+      animation: blink .8s step-end infinite;
+    }
+
+    /* ── MARKDOWN ── */
+    .md-p { margin-bottom: 9px; color: #A0AEC0; }
+    .md-p:last-child { margin-bottom: 0; }
+    .md-h1 { font-size: 17px; font-weight: 700; color: #E2E8F0; margin: 14px 0 6px; }
+    .md-h2 { font-size: 15px; font-weight: 600; color: #CBD5E1; margin: 12px 0 5px; }
+    .md-h3 { font-size: 13px; font-weight: 600; color: #94A3B8; margin: 10px 0 4px; letter-spacing: .02em; }
+    .md-ul, .md-ol { padding-left: 18px; margin: 7px 0; }
+    .md-ul li, .md-ol li { margin-bottom: 4px; color: #8B95A8; }
+    .md-strong { color: #E2E8F0; font-weight: 600; }
+    .md-em { color: #94A3B8; font-style: italic; }
+    .md-blockquote { border-left: 3px solid #1E3A6080; padding-left: 12px; margin: 8px 0; color: #4B5563; font-style: italic; }
+    .md-hr { border: none; border-top: 1px solid #151C2B; margin: 14px 0; }
+    .md-inline-code {
+      background: #0B0F1A; border: 1px solid #1A2438; border-radius: 4px;
+      padding: 1px 6px; font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px; color: #F59E0B;
+    }
+
+    /* ── CODE BLOCK ── */
+    .code-block { position: relative; margin: 10px 0; }
+    .code-block pre.md-code {
+      background: #0B0F1A; border: 1px solid #1A2438; border-radius: 10px;
+      padding: 14px 15px 14px 15px; overflow-x: auto;
+      font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+      color: #6EE7B7; line-height: 1.65; white-space: pre;
+    }
+    .code-lang {
+      position: absolute; top: 0; left: 14px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      color: #2A3850; letter-spacing: .05em; padding-top: 4px;
+      text-transform: lowercase; pointer-events: none;
+    }
+    .copy-btn {
+      position: absolute; top: 8px; right: 10px;
+      background: #131928; border: 1px solid #1E2A3E; border-radius: 6px;
+      color: #3D4F6A; font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px; padding: 3px 9px; cursor: pointer;
+      transition: all .15s; opacity: 0; min-height: 28px;
+      display: flex; align-items: center;
+    }
+    .code-block:hover .copy-btn { opacity: 1; }
+    /* Always visible on touch devices */
+    @media (hover: none) { .copy-btn { opacity: 1; } }
+    .copy-btn:hover { background: #1A2438; color: #8B95A8; border-color: #2A3850; }
+    .copy-btn.copied { color: #10B981; border-color: #10B98155; background: #10B98111; }
+
+    /* ── THINKING ── */
+    .thinking-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      margin-bottom: 20px; animation: fadeIn .2s ease-out;
+    }
+    .thinking-dots { display: flex; align-items: center; gap: 3px; padding-top: 7px; }
+    .dot-anim { width: 5px; height: 5px; border-radius: 50%; background: #60A5FA; animation: dotPulse 1.3s ease-in-out infinite; }
+    .thinking-label { padding-top: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #2A3850; letter-spacing: .03em; }
+
+    /* ── INPUT AREA ── */
+    #input-area {
+      padding: 8px 16px 16px; background: #080C14;
+      border-top: 1px solid #151C2B; flex-shrink: 0;
+    }
+    /* Safe area for iOS home indicator */
+    @supports (padding-bottom: env(safe-area-inset-bottom)) {
+      #input-area { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+    }
+    .input-wrap {
+      max-width: 720px; margin: 0 auto;
+      display: flex; gap: 8px; align-items: flex-end;
+      background: #0B0F1A; border: 1px solid #1E2A3E; border-radius: 12px;
+      padding: 10px 12px; transition: border-color .15s;
+    }
+    .input-wrap:focus-within { border-color: #2A3850; }
+    #chat-input {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: #E2E8F0; font-size: 14px; font-family: 'Syne', sans-serif;
+      resize: none; min-height: 22px; max-height: 150px;
+      line-height: 1.55; scrollbar-width: thin;
+    }
+    #chat-input::placeholder { color: #2A3850; }
+    .send-btn {
+      width: 36px; height: 36px; border-radius: 9px; background: #1D4ED8;
+      border: none; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0; transition: all .15s;
+      min-width: 36px;
+    }
+    .send-btn:hover:not(:disabled) { background: #2563EB; }
+    .send-btn:disabled { opacity: .25; cursor: not-allowed; }
+    .input-hint {
+      max-width: 720px; margin: 5px auto 0; font-size: 10px; color: #151C2B;
+      font-family: 'IBM Plex Mono', monospace; display: flex; justify-content: space-between;
+    }
+    @media (max-width: 640px) {
+      #input-area { padding: 6px 10px 14px; }
+      .input-hint { display: none; }
+      .input-wrap { padding: 9px 10px; }
+    }
+
+    /* ── NO KEY BANNER ── */
+    #no-key-banner {
+      display: none; max-width: 720px; margin: 0 auto 8px;
+      background: #1A0F00; border: 1px solid #78350F44; border-radius: 8px;
+      padding: 10px 14px; font-size: 12px; color: #D97706;
+      font-family: 'IBM Plex Mono', monospace; cursor: pointer; transition: background .15s;
+    }
+    #no-key-banner:hover { background: #231400; }
+    #no-key-banner.visible { display: block; }
+
+    /* ── SETTINGS MODAL ── */
+    #modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.8); z-index: 999;
+      align-items: flex-start; justify-content: center;
+      padding: 16px; overflow-y: auto;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: #0D1422; border: 1px solid #1E2A3E; border-radius: 16px;
+      padding: 24px 20px; width: 100%; max-width: 460px;
+      animation: modalIn .22s cubic-bezier(.4,0,.2,1);
+      margin: auto;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .modal-title { font-size: 15px; font-weight: 700; color: #E2E8F0; letter-spacing: .01em; }
+    .modal-close {
+      background: none; border: 1px solid #1E2A3E; border-radius: 6px;
+      color: #3D4F6A; cursor: pointer; padding: 5px 10px; font-size: 16px;
+      line-height: 1; transition: all .15s; min-height: 34px;
+    }
+    .modal-close:hover { color: #E2E8F0; border-color: #2A3850; }
+    .modal-section {
+      margin-bottom: 18px;
+    }
+    .modal-section-title {
+      font-size: 10.5px; font-family: 'IBM Plex Mono', monospace; color: #3D4F6A;
+      letter-spacing: .08em; margin-bottom: 10px; text-transform: uppercase;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-badge {
+      font-size: 9px; padding: 2px 7px; border-radius: 4px; font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .section-badge.groq { background: #60A5FA18; color: #60A5FA; border: 1px solid #60A5FA33; }
+    .section-badge.or   { background: #C084FC18; color: #C084FC; border: 1px solid #C084FC33; }
+    .key-field { margin-bottom: 8px; }
+    .key-field label {
+      font-size: 10.5px; font-family: 'IBM Plex Mono', monospace; color: #2A3850;
+      display: flex; align-items: center; gap: 6px; margin-bottom: 5px;
+    }
+    .key-num {
+      width: 16px; height: 16px; border-radius: 4px; background: #131928;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: #3D4F6A; flex-shrink: 0;
+    }
+    .key-input {
+      width: 100%; background: #080C14; border: 1px solid #1E2A3E; border-radius: 8px;
+      padding: 9px 12px; color: #8B95A8; font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px; outline: none; transition: border-color .15s; letter-spacing: .02em;
+    }
+    .key-input::placeholder { color: #1E2A3E; }
+    .key-input:focus { border-color: #2A3850; color: #E2E8F0; }
+    .modal-info {
+      background: #080C14; border: 1px solid #151C2B; border-radius: 8px;
+      padding: 9px 12px; font-size: 11px; color: #3D4F6A;
+      font-family: 'IBM Plex Mono', monospace; line-height: 1.6;
+    }
+    .modal-info a { color: #60A5FA; text-decoration: none; }
+    .modal-info a:hover { text-decoration: underline; }
+    .modal-info.or a { color: #C084FC; }
+    .failover-note {
+      font-size: 10.5px; color: #2A3850; font-family: 'IBM Plex Mono', monospace;
+      margin-top: 7px;
+    }
+    .failover-note span { color: #10B981; }
+    .modal-divider { border: none; border-top: 1px solid #151C2B; margin: 18px 0; }
+    .model-map-grid { display: grid; grid-template-columns: auto auto 1fr; gap: 6px 10px; align-items: center; }
+    .model-map-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+    .model-map-provider { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
+    .model-map-name { font-size: 11px; color: #3D4F6A; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .modal-save-btn {
+      width: 100%; background: #1D4ED8; border: none; border-radius: 9px;
+      color: #fff; font-size: 13.5px; font-family: 'Syne', sans-serif;
+      font-weight: 600; padding: 12px; cursor: pointer; transition: background .15s;
+      margin-top: 4px; letter-spacing: .02em; min-height: 46px;
+    }
+    .modal-save-btn:hover { background: #2563EB; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-logo"><span class="logo-dot"></span>ASK</div>
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      New chat
+    </button>
+    <div class="conv-list" id="conv-list"></div>
+    <div class="sidebar-footer">
+      <button class="settings-btn" onclick="openSettings()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        API Keys &amp; Settings
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="topbar">
+      <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
+      <span class="topbar-logo">ASK</span>
+      <div class="model-strip" id="model-strip"></div>
+      <button class="topbar-settings" onclick="openSettings()" aria-label="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+
+    <div id="messages">
+      <div class="messages-inner" id="messages-inner"></div>
+    </div>
+
+    <div id="input-area">
+      <div id="no-key-banner" onclick="openSettings()">⚠ No API key set. Tap to add your Groq or OpenRouter key →</div>
+      <div class="input-wrap">
+        <textarea id="chat-input" placeholder="Ask anything..." rows="1"
+          oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()" disabled aria-label="Send">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2z"/></svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        <span>Enter ↵ send &nbsp;·&nbsp; Shift+Enter newline</span>
+        <span id="model-hint"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div id="modal">
+    <div class="modal-header">
+      <span class="modal-title">⚙ API Keys &amp; Settings</span>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <!-- Groq Keys -->
+    <div class="modal-section">
+      <div class="modal-section-title">
+        API Keys — Groq
+        <span class="section-badge groq">GROQ</span>
+      </div>
+      <div class="key-field"><label><span class="key-num">1</span>Primary key</label><input class="key-input" type="password" id="g_key1" placeholder="gsk_..." autocomplete="off" /></div>
+      <div class="key-field"><label><span class="key-num">2</span>Backup key</label><input class="key-input" type="password" id="g_key2" placeholder="gsk_..." autocomplete="off" /></div>
+      <div class="key-field"><label><span class="key-num">3</span>Backup key</label><input class="key-input" type="password" id="g_key3" placeholder="gsk_..." autocomplete="off" /></div>
+      <div class="modal-info">
+        🔑 Free key at <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>
+      </div>
+      <div class="failover-note"><span>✓</span> Auto-failover: key 1 → 2 → 3 on error</div>
+    </div>
+
+    <hr class="modal-divider" />
+
+    <!-- OpenRouter Keys -->
+    <div class="modal-section">
+      <div class="modal-section-title">
+        API Keys — OpenRouter
+        <span class="section-badge or">OPENROUTER</span>
+      </div>
+      <div class="key-field"><label><span class="key-num">1</span>Primary key</label><input class="key-input" type="password" id="or_key1" placeholder="sk-or-..." autocomplete="off" /></div>
+      <div class="key-field"><label><span class="key-num">2</span>Backup key</label><input class="key-input" type="password" id="or_key2" placeholder="sk-or-..." autocomplete="off" /></div>
+      <div class="modal-info or">
+        🔑 Free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> — access Claude, GPT-4o, Gemini &amp; more
+      </div>
+      <div class="failover-note"><span>✓</span> Auto-failover: key 1 → 2 on error</div>
+    </div>
+
+    <hr class="modal-divider" />
+
+    <!-- Model Map -->
+    <div class="modal-section">
+      <div class="modal-section-title">Model Map</div>
+      <div class="model-map-grid" id="model-map-grid"></div>
+    </div>
+
+    <button class="modal-save-btn" onclick="saveKeys()">Save Keys</button>
+  </div>
+</div>
+
+<script>
+// ── ENDPOINTS ────────────────────────────────────────────────────
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const OR_ENDPOINT   = 'https://openrouter.ai/api/v1/chat/completions';
+
+// ── MODEL DEFINITIONS ────────────────────────────────────────────
+const MODELS = [
+  // Groq models
+  { id:'0x128',   label:'0x128',   desc:'Flash',    color:'#6EE7B7', provider:'groq', modelId:'llama-3.1-8b-instant',                          tokens:8192       },
+  { id:'0x256',   label:'0x256',   desc:'Default',  color:'#60A5FA', provider:'groq', modelId:'llama-3.3-70b-versatile',                       tokens:8192, def:true },
+  { id:'0x512',   label:'0x512',   desc:'Reason',   color:'#F59E0B', provider:'groq', modelId:'meta-llama/llama-4-maverick-17b-128e-instruct', tokens:8192       },
+  { id:'0x1028',  label:'0x1028',  desc:'Super',    color:'#F87171', provider:'groq', modelId:'qwen-qwq-32b',                                  tokens:8192       },
+  // OpenRouter models
+  { id:'claude',  label:'Claude',  desc:'Sonnet',   color:'#C084FC', provider:'openrouter', modelId:'anthropic/claude-3.5-sonnet'         },
+  { id:'gpt4o',   label:'GPT-4o',  desc:'OpenAI',   color:'#34D399', provider:'openrouter', modelId:'openai/gpt-4o'                        },
+  { id:'gemini',  label:'Gemini',  desc:'Flash',    color:'#FB923C', provider:'openrouter', modelId:'google/gemini-2.0-flash-001'          },
+  { id:'deep',    label:'DeepSeek',desc:'V3',       color:'#818CF8', provider:'openrouter', modelId:'deepseek/deepseek-chat-v3-0324'       },
+];
+
+const STARTERS = [
+  'Explain async/await in Python',
+  'Write a REST API with FastAPI',
+  'Apa itu machine learning?',
+  'Debug: why is my loop infinite?',
+];
+
+const THINKING_PHASES = ['Thinking...', 'Processing...', 'Giving my best answer...'];
+
+const SYSTEM_PROMPT = `You are ASK, a high-performance AI assistant.
+- Fast, minimalist, highly intelligent
+- Adaptive: respond in the same language as the user (Bahasa Indonesia or English)
+- Clean output: use markdown when it adds clarity (headers, lists, code blocks)
+- No filler words. High signal. Structured when needed.`;
+
+// ── STATE ────────────────────────────────────────────────────────
+let state = {
+  model: '0x256',
+  conversations: [],
+  currentId: null,
+  loading: false,
+  thinkingPhase: 0,
+  thinkingTimer: null,
+};
+
+// ── INIT ─────────────────────────────────────────────────────────
+function init() {
+  renderModelStrip();
+  renderModelMap();
+  loadConversations();
+  checkKeys();
+  renderConvList();
+  showEmpty();
+  document.getElementById('chat-input').addEventListener('input', updateSendBtn);
+  updateSendBtn();
+}
+
+// ── KEY MANAGEMENT ───────────────────────────────────────────────
+function getGroqKeys() {
+  return [1,2,3].map(i => localStorage.getItem(`ask_g_key_${i}`) || '').filter(k => k.trim());
+}
+function getORKeys() {
+  return [1,2].map(i => localStorage.getItem(`ask_or_key_${i}`) || '').filter(k => k.trim());
+}
+function checkKeys() {
+  const banner = document.getElementById('no-key-banner');
+  const hasAny = getGroqKeys().length > 0 || getORKeys().length > 0;
+  hasAny ? banner.classList.remove('visible') : banner.classList.add('visible');
+}
+
+// ── STREAMING — GROQ ─────────────────────────────────────────────
+async function streamGroq(messages, model, onChunk) {
+  const keys = getGroqKeys();
+  if (!keys.length) throw new Error('NO_GROQ_KEY');
+  const payload = {
+    model: model.modelId, max_tokens: 2048, temperature: 0.7, stream: true,
+    messages: [{ role:'system', content:SYSTEM_PROMPT }, ...messages],
+  };
+  let lastError = null;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const res = await fetch(GROQ_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${keys[i]}` },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        lastError = `Groq key ${i+1} error ${res.status}: ${e?.error?.message || ''}`;
+        continue;
+      }
+      return await readSSEStream(res, onChunk);
+    } catch (err) { lastError = `Groq key ${i+1} network error`; }
+  }
+  throw new Error(lastError || 'All Groq keys failed');
+}
+
+// ── STREAMING — OPENROUTER ───────────────────────────────────────
+async function streamOpenRouter(messages, model, onChunk) {
+  const keys = getORKeys();
+  if (!keys.length) throw new Error('NO_OR_KEY');
+  const payload = {
+    model: model.modelId, max_tokens: 2048, temperature: 0.7, stream: true,
+    messages: [{ role:'system', content:SYSTEM_PROMPT }, ...messages],
+  };
+  let lastError = null;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const res = await fetch(OR_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${keys[i]}`,
+          'HTTP-Referer': location.href,
+          'X-Title': 'ASK AI Assistant',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        lastError = `OpenRouter key ${i+1} error ${res.status}: ${e?.error?.message || ''}`;
+        continue;
+      }
+      return await readSSEStream(res, onChunk);
+    } catch (err) { lastError = `OpenRouter key ${i+1} network error`; }
+  }
+  throw new Error(lastError || 'All OpenRouter keys failed');
+}
+
+// ── SSE READER (shared) ──────────────────────────────────────────
+async function readSSEStream(res, onChunk) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '', buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (data === '[DONE]') continue;
+      try {
+        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+        if (delta) { fullText += delta; onChunk(fullText); }
+      } catch (_) {}
+    }
+  }
+  return fullText;
+}
+
+// ── DISPATCH ─────────────────────────────────────────────────────
+async function callStream(messages, onChunk) {
+  const model = MODELS.find(m => m.id === state.model);
+  if (model.provider === 'groq') return streamGroq(messages, model, onChunk);
+  return streamOpenRouter(messages, model, onChunk);
+}
+
+// ── CONVERSATIONS ────────────────────────────────────────────────
+function loadConversations() {
+  try {
+    const saved = localStorage.getItem('ask_conversations');
+    if (saved) {
+      state.conversations = JSON.parse(saved);
+      if (state.conversations.length) state.currentId = state.conversations[0].id;
+    }
+  } catch (_) {}
+  if (!state.conversations.length) createNewConv();
+}
+function saveConversations() {
+  try {
+    if (state.conversations.length > 30) state.conversations = state.conversations.slice(0,30);
+    localStorage.setItem('ask_conversations', JSON.stringify(state.conversations));
+  } catch (_) {}
+}
+function createNewConv() {
+  const id = Date.now();
+  const conv = { id, title:'New conversation', messages:[] };
+  state.conversations.unshift(conv);
+  state.currentId = id;
+  saveConversations();
+  return conv;
+}
+function getCurrentConv() { return state.conversations.find(c => c.id === state.currentId); }
+function newChat() {
+  createNewConv(); renderConvList(); showEmpty(); closeSidebar();
+  document.getElementById('chat-input').focus();
+}
+function switchConv(id) {
+  if (state.loading) return;
+  state.currentId = id; renderConvList(); renderMessages(); closeSidebar();
+}
+
+// ── SEND MESSAGE ─────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || state.loading) return;
+
+  const model = MODELS.find(m => m.id === state.model);
+  const hasKey = model.provider === 'groq' ? getGroqKeys().length > 0 : getORKeys().length > 0;
+  if (!hasKey) { openSettings(); return; }
+
+  const conv = getCurrentConv();
+  conv.messages.push({ role:'user', content:text });
+  if (conv.messages.length === 1) conv.title = text.slice(0,40) + (text.length > 40 ? '…' : '');
+
+  input.value = ''; input.style.height = 'auto';
+  state.loading = true;
+  updateSendBtn();
+  hideEmpty(); renderMessages(); renderConvList(); saveConversations();
+  showThinkingRow();
+
+  const streamMsg = { role:'assistant', content:'' };
+  conv.messages.push(streamMsg);
+  let streamBubble = null;
+
+  try {
+    await callStream(conv.messages.slice(0,-1), (partial) => {
+      if (!streamBubble) { removeThinkingRow(); streamBubble = injectStreamBubble(); }
+      streamMsg.content = partial;
+      streamBubble.innerHTML = renderMarkdown(partial) + '<span class="stream-cursor"></span>';
+      scrollBottom();
+    });
+    if (streamBubble) streamBubble.innerHTML = renderMarkdown(streamMsg.content);
+  } catch (err) {
+    removeThinkingRow();
+    let msg = '⚠ ';
+    if (err.message === 'NO_GROQ_KEY')   msg += 'No Groq key set. Open Settings to add one.';
+    else if (err.message === 'NO_OR_KEY') msg += 'No OpenRouter key set. Open Settings to add one.';
+    else msg += err.message;
+    streamMsg.content = msg;
+    if (!streamBubble) streamBubble = injectStreamBubble();
+    streamBubble.innerHTML = renderMarkdown(msg);
+  } finally {
+    state.loading = false;
+    saveConversations(); updateSendBtn(); scrollBottom();
+    document.getElementById('chat-input').focus();
+  }
+}
+
+// ── DOM HELPERS ──────────────────────────────────────────────────
+function showThinkingRow() {
+  const inner = document.getElementById('messages-inner');
+  const row = document.createElement('div');
+  row.className = 'thinking-row'; row.id = 'thinking-row';
+  row.innerHTML = `<div class="ai-avatar">A</div><div>
+    <div class="thinking-dots">
+      <div class="dot-anim" style="animation-delay:0s"></div>
+      <div class="dot-anim" style="animation-delay:.2s"></div>
+      <div class="dot-anim" style="animation-delay:.4s"></div>
+    </div>
+    <div class="thinking-label" id="thinking-label">${THINKING_PHASES[0]}</div>
+  </div>`;
+  inner.appendChild(row);
+  state.thinkingPhase = 0;
+  state.thinkingTimer = setInterval(() => {
+    state.thinkingPhase = (state.thinkingPhase+1) % THINKING_PHASES.length;
+    const el = document.getElementById('thinking-label');
+    if (el) el.textContent = THINKING_PHASES[state.thinkingPhase];
+  }, 1500);
+  scrollBottom();
+}
+function removeThinkingRow() {
+  clearInterval(state.thinkingTimer);
+  const r = document.getElementById('thinking-row');
+  if (r) r.remove();
+}
+function injectStreamBubble() {
+  const inner = document.getElementById('messages-inner');
+  const row = document.createElement('div');
+  row.className = 'msg-row assistant';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble assistant';
+  row.innerHTML = '<div class="ai-avatar">A</div>';
+  row.appendChild(bubble);
+  inner.appendChild(row);
+  return bubble;
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+}
+function updateSendBtn() {
+  document.getElementById('send-btn').disabled =
+    !document.getElementById('chat-input').value.trim() || state.loading;
+}
+
+// ── RENDER ───────────────────────────────────────────────────────
+function renderMessages() {
+  const inner = document.getElementById('messages-inner');
+  inner.innerHTML = '';
+  const conv = getCurrentConv();
+  if (!conv || !conv.messages.length) { showEmpty(); return; }
+  conv.messages.forEach(msg => {
+    const row = document.createElement('div');
+    row.className = `msg-row ${msg.role}`;
+    row.innerHTML = msg.role === 'assistant'
+      ? `<div class="ai-avatar">A</div><div class="msg-bubble assistant">${renderMarkdown(msg.content)}</div>`
+      : `<div class="msg-bubble user">${escHtml(msg.content)}</div>`;
+    inner.appendChild(row);
+  });
+  scrollBottom();
+}
+function showEmpty() {
+  document.getElementById('messages-inner').innerHTML = `
+    <div id="empty-state">
+      <div class="empty-logo">ASK</div>
+      <div class="empty-sub">// fast · adaptive · minimal</div>
+      <div class="starter-grid">
+        ${STARTERS.map(s => `<button class="starter-card" onclick="useStarter(this.dataset.text)" data-text="${escAttr(s)}">${escHtml(s)}</button>`).join('')}
+      </div>
+    </div>`;
+}
+function hideEmpty() { const e = document.getElementById('empty-state'); if (e) e.remove(); }
+function useStarter(text) {
+  const input = document.getElementById('chat-input');
+  input.value = text; autoResize(input); updateSendBtn(); input.focus();
+}
+function scrollBottom() {
+  const m = document.getElementById('messages');
+  setTimeout(() => { m.scrollTop = m.scrollHeight; }, 30);
+}
+function renderConvList() {
+  document.getElementById('conv-list').innerHTML = state.conversations.map(c =>
+    `<div class="conv-item ${c.id === state.currentId ? 'active' : ''}" onclick="switchConv(${c.id})">${escHtml(c.title)}</div>`
+  ).join('');
+}
+function renderModelStrip() {
+  document.getElementById('model-strip').innerHTML = MODELS.map(m => {
+    const provBadge = m.provider === 'openrouter'
+      ? `<span class="badge-provider">OR</span>` : '';
+    return `<button class="model-badge ${m.id === state.model ? 'active' : ''}"
+      style="--badge-color:${m.color}" onclick="selectModel('${m.id}')"
+      title="${m.modelId}">
+      <span class="badge-id">${m.label}</span>
+      <span class="badge-desc">${m.desc}</span>
+      ${provBadge}
+    </button>`;
+  }).join('');
+  updateModelHint();
+}
+function selectModel(id) { state.model = id; renderModelStrip(); }
+function updateModelHint() {
+  const m = MODELS.find(x => x.id === state.model);
+  const h = document.getElementById('model-hint');
+  if (h && m) {
+    h.style.cssText = "font-family:'IBM Plex Mono',monospace;font-size:10px;color:#1E2A3E";
+    h.textContent = `${m.provider === 'openrouter' ? 'OR' : 'Groq'} · ${m.modelId}`;
+  }
+}
+function renderModelMap() {
+  document.getElementById('model-map-grid').innerHTML = MODELS.map(m => {
+    const provColor = m.provider === 'openrouter' ? '#C084FC' : '#60A5FA';
+    const provLabel = m.provider === 'openrouter' ? 'OR' : 'Groq';
+    return `
+      <span class="model-map-id" style="background:${m.color}15;color:${m.color}">${m.label}</span>
+      <span class="model-map-provider" style="background:${provColor}12;color:${provColor}">${provLabel}</span>
+      <span class="model-map-name">${m.modelId}</span>`;
+  }).join('');
+}
+
+// ── COPY TO CLIPBOARD ────────────────────────────────────────────
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    btn.textContent = '✓ Copied'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// ── MARKDOWN RENDERER ────────────────────────────────────────────
+function renderMarkdown(text) {
+  const blocks = [];
+  let p = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const langLabel = lang ? `<span class="code-lang">${escHtml(lang)}</span>` : '';
+    blocks.push(
+      `<div class="code-block">${langLabel}` +
+      `<button class="copy-btn" onclick="copyCode(this)">Copy</button>` +
+      `<pre class="md-code"><code>${escHtml(code.trim())}</code></pre></div>`
+    );
+    return `\x00BLOCK${blocks.length-1}\x00`;
+  });
+  p = escHtml(p);
+  p = p.replace(/`([^`]+)`/g, (_, c) => `<code class="md-inline-code">${c}</code>`);
+  p = p.replace(/\*\*(.+?)\*\*/g, '<strong class="md-strong">$1</strong>');
+  p = p.replace(/\*(.+?)\*/g, '<em class="md-em">$1</em>');
+  p = p.replace(/^### (.+)$/gm, '<h3 class="md-h3">$1</h3>');
+  p = p.replace(/^## (.+)$/gm, '<h2 class="md-h2">$1</h2>');
+  p = p.replace(/^# (.+)$/gm, '<h1 class="md-h1">$1</h1>');
+  p = p.replace(/^---$/gm, '<hr class="md-hr" />');
+  p = p.replace(/^&gt; (.+)$/gm, '<blockquote class="md-blockquote">$1</blockquote>');
+  p = p.replace(/^[\s]*[-*] (.+)$/gm, '<li>$1</li>');
+  p = p.replace(/(<li>[\s\S]*?<\/li>)/g, m => !m.includes('<ul') ? `<ul class="md-ul">${m}</ul>` : m);
+  p = p.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  p = p.split(/\n\n+/).map(para => {
+    para = para.trim(); if (!para) return '';
+    if (/^<(h[1-3]|ul|ol|pre|hr|blockquote|\x00BLOCK)/.test(para)) return para;
+    return `<p class="md-p">${para.replace(/\n/g,'<br/>')}</p>`;
+  }).join('');
+  return p.replace(/\x00BLOCK(\d+)\x00/g, (_, i) => blocks[+i]);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) { return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// ── SIDEBAR ──────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ── SETTINGS MODAL ───────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('g_key1').value  = localStorage.getItem('ask_g_key_1')  || '';
+  document.getElementById('g_key2').value  = localStorage.getItem('ask_g_key_2')  || '';
+  document.getElementById('g_key3').value  = localStorage.getItem('ask_g_key_3')  || '';
+  document.getElementById('or_key1').value = localStorage.getItem('ask_or_key_1') || '';
+  document.getElementById('or_key2').value = localStorage.getItem('ask_or_key_2') || '';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeSettings() { document.getElementById('modal-overlay').classList.remove('open'); }
+function handleOverlayClick(e) { if (e.target === document.getElementById('modal-overlay')) closeSettings(); }
+function saveKeys() {
+  [['g',3],['or',2]].forEach(([prefix, count]) => {
+    for (let i = 1; i <= count; i++) {
+      const v = document.getElementById(`${prefix}_key${i}`).value.trim();
+      const k = `ask_${prefix}_key_${i}`;
+      v ? localStorage.setItem(k,v) : localStorage.removeItem(k);
+    }
+  });
+  checkKeys(); closeSettings();
+  const btn = document.querySelector('.modal-save-btn');
+  btn.textContent = '✓ Saved!';
+  setTimeout(() => { btn.textContent = 'Save Keys'; }, 1500);
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); newChat(); }
+  if (e.key === 'Escape') closeSettings();
+});
+
+// Prevent double-tap zoom on iOS buttons
+document.querySelectorAll('button').forEach(b => b.addEventListener('touchend', e => e.preventDefault()));
+
+init();
+</script>
+</body>
+</html>
